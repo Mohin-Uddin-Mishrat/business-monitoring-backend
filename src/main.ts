@@ -1,10 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { setupSwagger } from './swagger/swagger.setup';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await app.listen(process.env.PORT ?? 3000);
 
   app.enableCors(
     {origin:['*','http://localhost:5173'],
@@ -23,5 +23,8 @@ async function bootstrap() {
   // app.useGlobalFilters(new GlobalExceptionFilter());
 
   setupSwagger(app);
+
+    await app.listen(process.env.PORT ?? 5000);
+
 }
 bootstrap();

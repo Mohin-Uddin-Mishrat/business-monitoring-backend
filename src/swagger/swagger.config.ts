@@ -12,7 +12,6 @@ export const swaggerConfig = new DocumentBuilder()
       name: 'authorization',
       in: 'header',
     },
-    'auth', 
   )
   .addSecurityRequirements({
     auth: [],
