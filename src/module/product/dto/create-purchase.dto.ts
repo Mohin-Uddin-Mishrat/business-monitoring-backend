@@ -11,7 +11,7 @@ import {
   ApiPropertyOptional 
 } from '@nestjs/swagger';
 
-export class CreatePurchaseDto {
+export class PurchaseCreateDto {
   @ApiProperty({
     description: 'Product ID reference',
     example: '507f1f77bcf86cd799439011'

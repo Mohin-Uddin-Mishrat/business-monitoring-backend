@@ -12,7 +12,7 @@ import {
 } from '@nestjs/swagger';
 import { Types } from 'mongoose';
 
-export class CreateSaleDto {
+export class SaleCreateDto {
   @ApiProperty({
     description: 'Product ID reference',
     example: '507f1f77bcf86cd799439011'

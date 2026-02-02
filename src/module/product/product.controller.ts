@@ -1,143 +1,388 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseIntPipe, NotFoundException, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  ParseIntPipe,
+  NotFoundException,
+  BadRequestException,
+  HttpStatus,
+  Res,
+  Req,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { ProductService } from './product.service';
-import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
-import { CreateSaleDto } from './dto/create-sale.dto';
-import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import {  ProductCreateDto, UpdateProductDto } from './dto/create-product.dto';
+import {  SaleCreateDto } from './dto/create-sale.dto';
+import {  PurchaseCreateDto } from './dto/create-purchase.dto';
+import sendResponse from 'src/utils/sendResponse';
+import type { Request, Response } from 'express';
+import moment from 'moment';
 
 @ApiTags('Products')
 @Controller('products')
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Create a new product' })
-  @ApiResponse({ status: 201, description: 'Product created successfully' })
-  @ApiResponse({ status: 400, description: 'Bad Request - SKU already exists' })
-  async create(@Body() createProductDto: CreateProductDto) {
-    return this.productService.createProduct(createProductDto);
-  }
-
-  @Get()
-  @ApiOperation({ summary: 'Get all products with pagination' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number', example: 1 })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page', example: 10 })
-  async findAll(
-    @Query('page', ParseIntPipe) page?: number,
-    @Query('limit', ParseIntPipe) limit?: number
+  constructor(private readonly ProductService: ProductService) {}
+  @Post('create-product')
+  @ApiOperation({ summary: 'Create  Product' })
+  async createProduct(
+    @Body() dto: ProductCreateDto,
+    @Req() req: Request,
+    @Res() res: Response,
   ) {
-    return this.productService.findAllProducts(page || 1, limit || 10);
+    const result = await this.ProductService.createProduct(dto);
+    return sendResponse(res, {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.product,
+    });
   }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get a product by ID' })
-  @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiResponse({ status: 200, description: 'Product found' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async findOne(@Param('id') id: string) {
-    return this.productService.findOneProduct(id);
-  }
-
-  @Get('sku/:sku')
-  @ApiOperation({ summary: 'Get a product by SKU' })
-  @ApiParam({ name: 'sku', description: 'Product SKU' })
-  @ApiResponse({ status: 200, description: 'Product found' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async findBySku(@Param('sku') sku: string) {
-    return this.productService.findBySku(sku);
-  }
-
-  @Patch(':id')
-  @ApiOperation({ summary: 'Update a product' })
-  @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiResponse({ status: 200, description: 'Product updated successfully' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async update(
-    @Param('id') id: string,
-    @Body() updateProductDto: UpdateProductDto
+  // create purchase
+  @Post('create-purchase')
+  @ApiOperation({ summary: 'Create  Product' })
+  async createPurchase(
+    @Body() dto: PurchaseCreateDto,
+    @Req() req: Request,
+    @Res() res: Response,
   ) {
-    return this.productService.updateProduct(id, updateProductDto);
+    const result = await this.ProductService.createPurchase(dto);
+    return sendResponse(res, {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.purchase,
+    });
   }
-
-  @Delete(':id')
-  @ApiOperation({ summary: 'Delete a product' })
-  @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiResponse({ status: 200, description: 'Product deleted successfully' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async remove(@Param('id') id: string) {
-    return this.productService.removeProduct(id);
-  }
-
-  @Post('sales')
-  @ApiOperation({ summary: 'Create a new sale' })
-  @ApiResponse({ status: 201, description: 'Sale created successfully' })
-  @ApiResponse({ status: 400, description: 'Insufficient stock or invalid data' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async createSale(@Body() createSaleDto: CreateSaleDto) {
-    return this.productService.createSale(createSaleDto);
-  }
-
-  @Get('sales')
-  @ApiOperation({ summary: 'Get all sales with pagination' })
-  @ApiQuery({ name: 'productId', required: false, type: String, description: 'Filter by product ID' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number', example: 1 })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page', example: 10 })
-  async findAllSales(
-    @Query('productId') productId?: string,
-    @Query('page', ParseIntPipe) page?: number,
-    @Query('limit', ParseIntPipe) limit?: number
+  //create sale
+  @Post('create-sale')
+  @ApiOperation({ summary: 'Create  Product' })
+  async createSale(
+    @Body() dto: SaleCreateDto,
+    @Req() req: Request,
+    @Res() res: Response,
   ) {
-    return this.productService.findAllSales(productId, page || 1, limit || 10);
+    const result = await this.ProductService.createSale(dto);
+    return sendResponse(res, {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.sale,
+    });
   }
-
-  @Get('sales/report')
-  @ApiOperation({ summary: 'Get sales report' })
-  @ApiQuery({ name: 'startDate', required: false, type: String, description: 'Start date (ISO format)', example: '2026-01-01T00:00:00.000Z' })
-  @ApiQuery({ name: 'endDate', required: false, type: String, description: 'End date (ISO format)', example: '2026-02-01T23:59:59.999Z' })
-  async getSalesReport(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string
+  // generate report for chart
+  @Get('generate-report')
+  @ApiOperation({ summary: 'Generate Product Report' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Start date for the report',
+    type: String,
+    example: '2023-01-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'End date for the report',
+    type: String,
+    example: '2023-12-31',
+  })
+  @ApiQuery({
+    name: 'productId',
+    required: false,
+    description: 'Product ID to filter the report by',
+    type: String,
+    example: 'b0e742f9-df07-4e12-b90d-4b45b34a5b60',
+  })
+  async generateReport(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('productId') productId: string, // Optional productId query
+    @Res() res: Response,
   ) {
-    return this.productService.getSalesReport(
-      startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined
+    if (!startDate || !endDate) {
+      const now = moment();
+      startDate = now.startOf('month').format('YYYY-MM-DD');
+      endDate = now.endOf('month').format('YYYY-MM-DD');
+    }
+
+    // Use provided dates or fallback to default ones
+    const start = startDate;
+    const end = endDate;
+
+    const result = await this.ProductService.generateReport(
+      start,
+      end,
+      productId,
+    ); // Pass productId to the service
+
+    return sendResponse(res, {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: result.message,
+      data: result.data,
+    });
+  }
+  // gnerate report for accounting
+  @Get('generate-report-accounting')
+  @ApiOperation({ summary: 'Generate Product Report' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Start date for the report',
+    type: String,
+    example: '2023-01-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'End date for the report',
+    type: String,
+    example: '2023-12-31',
+  })
+  @ApiQuery({
+    name: 'productId',
+    required: false,
+    description: 'Product ID to filter the report by',
+    type: String,
+    example: 'b0e742f9-df07-4e12-b90d-4b45b34a5b60',
+  })
+  async generateReportAcccount(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('productId') productId: string, // Optional productId query
+    @Res() res: Response,
+  ) {
+    if (!startDate || !endDate) {
+      const now = moment();
+      // Set the start of the current month (first day of the month)
+      startDate = now.startOf('month').format('YYYY-MM-DD');
+      // Set the end of the current month (last day of the month)
+      endDate = now.endOf('month').format('YYYY-MM-DD');
+    }
+    const result = await this.ProductService.getProductDataInRange(
+      productId,
+      new Date(startDate),
+      new Date(endDate),
     );
-  }
 
-  @Post('purchases')
-  @ApiOperation({ summary: 'Create a new purchase' })
-  @ApiResponse({ status: 201, description: 'Purchase created successfully' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async createPurchase(@Body() createPurchaseDto: CreatePurchaseDto) {
-    return this.productService.createPurchase(createPurchaseDto);
+    return res.status(HttpStatus.OK).json({
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: 'Product report generated successfully',
+      data: result,
+    });
   }
-
-  @Get('purchases')
-  @ApiOperation({ summary: 'Get all purchases with pagination' })
-  @ApiQuery({ name: 'productId', required: false, type: String, description: 'Filter by product ID' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number', example: 1 })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page', example: 10 })
-  async findAllPurchases(
+  // get slase with pagination
+  @Get('getSalesWithPagination')
+  @ApiOperation({ summary: 'Generate Sales Report with Pagination' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Start date for the report (default is the current year)',
+    type: String,
+    example: '2023-01-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'End date for the report (default is the current year)',
+    type: String,
+    example: '2023-12-31',
+  })
+  @ApiQuery({
+    name: 'productId',
+    required: false,
+    description: 'Product ID to filter the sales by (optional)',
+    type: String,
+    example: 'b0e742f9-df07-4e12-b90d-4b45b34a5b60',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number for pagination (default is 1)',
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number of results per page (default is 10)',
+    type: Number,
+    example: 10,
+  })
+  @ApiQuery({
+    name: 'customerName',
+    required: false,
+    description: 'Search by customer name',
+    type: String,
+    example: 'alice',
+  })
+  async getSalesWithPagination(
+    @Res() res: Response,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
     @Query('productId') productId?: string,
-    @Query('page', ParseIntPipe) page?: number,
-    @Query('limit', ParseIntPipe) limit?: number
+    @Query('customerName') customerName?: string,
+    @Query('page') page = 1, // Default to page 1
+    @Query('pageSize') pageSize = 10, // Default to 10 results per page
   ) {
-    return this.productService.findAllPurchases(productId, page || 1, limit || 10);
-  }
+    console.log(page, pageSize);
+    const result = await this.ProductService.getSalesWithPagination(
+      startDate,
+      endDate,
+      productId,
+      customerName,
+      page,
+      pageSize,
+    );
 
-  @Get('inventory/report')
-  @ApiOperation({ summary: 'Get inventory report' })
-  @ApiResponse({ status: 200, description: 'Inventory report retrieved successfully' })
-  async getInventoryReport() {
-    return this.productService.getInventoryReport();
+    return res.status(HttpStatus.OK).json({
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: 'Sales report generated successfully',
+      data: result,
+    });
   }
+  // get Purchase with pagination
+  @Get('getPurchasesWithPagination')
+  @ApiOperation({ summary: 'Generate Purchase Report with Pagination' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Start date for the report (default is the current year)',
+    type: String,
+    example: '2023-01-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'End date for the report (default is the current year)',
+    type: String,
+    example: '2023-12-31',
+  })
+  @ApiQuery({
+    name: 'productId',
+    required: false,
+    description: 'Product ID to filter the purchases by (optional)',
+    type: String,
+    example: 'b0e742f9-df07-4e12-b90d-4b45b34a5b60',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number for pagination (default is 1)',
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number of results per page (default is 10)',
+    type: Number,
+    example: 10,
+  })
+  @ApiQuery({
+    name: 'supplierName',
+    required: false,
+    description: 'supplierName',
+    type: String,
+    example: 'suppliarname',
+  })
+  async getPurchasesWithPagination(
+    @Res() res: Response,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('productId') productId?: string,
+    @Query('supplierName') supplierName?: string,
+    @Query('page') page = 1, // Default to page 1
+    @Query('pageSize') pageSize = 10, // Default to 10 results per page
+  ) {
+    const result = await this.ProductService.getPurchasesWithPagination(
+      startDate,
+      endDate,
+      productId,
+      supplierName,
+      page,
+      pageSize,
+    );
 
-  @Get(':id/stats')
-  @ApiOperation({ summary: 'Get product statistics' })
-  @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiResponse({ status: 200, description: 'Statistics retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async getProductStats(@Param('id') id: string) {
-    return this.productService.getProductStats(id);
+    return res.status(HttpStatus.OK).json({
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: 'Purchase report generated successfully',
+      data: result,
+    });
+  }
+  // get slase with pagination
+  @Get('getDueWithPagination')
+  @ApiOperation({ summary: 'Generate Due Report with Pagination' })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Start date for the report (default is the current year)',
+    type: String,
+    example: '2023-01-01',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'End date for the report (default is the current year)',
+    type: String,
+    example: '2023-12-31',
+  })
+  @ApiQuery({
+    name: 'productId',
+    required: false,
+    description: 'Product ID to filter the due report by (optional)',
+    type: String,
+    example: 'b0e742f9-df07-4e12-b90d-4b45b34a5b60',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number for pagination (default is 1)',
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number of results per page (default is 10)',
+    type: Number,
+    example: 10,
+  })
+  async getDueWithPagination(
+    @Res() res: Response,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('productId') productId?: string,
+    @Query('page') page = 1, // Default to page 1
+    @Query('pageSize') pageSize = 10, // Default to 10 results per page
+  ) {
+    const result = await this.ProductService.getDueWithPagination(
+      startDate,
+      endDate,
+      productId,
+      page,
+      pageSize,
+    );
+
+    return res.status(HttpStatus.OK).json({
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: 'Due report generated successfully',
+      data: result,
+    });
   }
 }

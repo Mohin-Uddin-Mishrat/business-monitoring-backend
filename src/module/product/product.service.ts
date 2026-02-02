@@ -1,12 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { Sale, SaleDocument } from './schemas/sale.schema';
 import { Purchase, PurchaseDocument } from './schemas/purchase.schema';
-import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto';
-import { CreateSaleDto } from './dto/create-sale.dto';
-import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { ProductCreateDto } from './dto/create-product.dto';
+import { SaleCreateDto } from './dto/create-sale.dto';
+import { PurchaseCreateDto } from './dto/create-purchase.dto';
+import moment from 'moment';
 
 @Injectable()
 export class ProductService {
@@ -16,324 +21,509 @@ export class ProductService {
     @InjectModel(Purchase.name) private purchaseModel: Model<PurchaseDocument>,
   ) {}
 
-  // Product Methods
-  async createProduct(createProductDto: CreateProductDto): Promise<Product> {
-    // Check if SKU already exists
-    const existingProduct = await this.productModel.findOne({ 
-      sku: createProductDto.sku 
-    });
-    if (existingProduct) {
+  // --- CREATE PRODUCT ---
+  async createProduct(dto: ProductCreateDto) {
+    const { name, sku, quantity, price } = dto;
+
+    if (!name || !sku || quantity == null || price == null) {
+      throw new BadRequestException('Invalid credentials');
+    }
+
+    const existing = await this.productModel.findOne({ sku });
+    if (existing) {
       throw new BadRequestException('SKU already exists');
     }
 
-    const createdProduct = new this.productModel(createProductDto);
-    return createdProduct.save();
-  }
-
-  async findAllProducts(page: number = 1, limit: number = 10): Promise<any> {
-    const skip = (page - 1) * limit;
-
-    const [products, total] = await Promise.all([
-      this.productModel
-        .find()
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .exec(),
-      this.productModel.countDocuments().exec(),
-    ]);
-
-    return {
-      data: products,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
-  }
-
-  async findOneProduct(id: string): Promise<Product> {
-    const product = await this.productModel.findById(id).exec();
-    if (!product) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-    return product;
-  }
-
-  async findBySku(sku: string): Promise<Product> {
-    const product = await this.productModel.findOne({ sku }).exec();
-    if (!product) {
-      throw new NotFoundException(`Product with SKU ${sku} not found`);
-    }
-    return product;
-  }
-
-  async updateProduct(
-    id: string,
-    updateProductDto: UpdateProductDto,
-  ): Promise<Product> {
-    const updatedProduct = await this.productModel
-      .findByIdAndUpdate(id, updateProductDto, { 
-        new: true,
-        runValidators: true 
-      })
-      .exec();
-
-    if (!updatedProduct) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-
-    return updatedProduct;
-  }
-
-  async removeProduct(id: string): Promise<Product> {
-    const deletedProduct = await this.productModel
-      .findByIdAndDelete(id)
-      .exec();
-
-    if (!deletedProduct) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-
-    // Soft delete related sales and purchases
-    await this.saleModel.updateMany(
-      { productId: id },
-      { $set: { deleted: true } }
-    ).exec();
-
-    await this.purchaseModel.updateMany(
-      { productId: id },
-      { $set: { deleted: true } }
-    ).exec();
-
-    return deletedProduct;
-  }
-
-  // Sale Methods
-  async createSale(createSaleDto: CreateSaleDto): Promise<Sale> {
-    // Verify product exists
-    const product = await this.productModel.findById(createSaleDto.productId).exec();
-    if (!product) {
-      throw new NotFoundException('Product not found');
-    }
-
-    // Check if sufficient quantity is available
-    if (product.quantity < createSaleDto.quantity) {
-      throw new BadRequestException(
-        `Insufficient stock. Available: ${product.quantity}, Requested: ${createSaleDto.quantity}`
-      );
-    }
-
-    // Calculate total and profit
-    const total = createSaleDto.quantity * createSaleDto.salePrice;
-    const profit = createSaleDto.quantity * (createSaleDto.salePrice - createSaleDto.purchasePrice);
-
-    const saleData = {
-      ...createSaleDto,
-      total,
-      profit,
-      productId: createSaleDto.productId,
-    };
-
-    const createdSale = new this.saleModel(saleData);
-    const savedSale = await createdSale.save();
-
-    // Update product quantity
-    await this.productModel.findByIdAndUpdate(
-      createSaleDto.productId,
-      { $inc: { quantity: -createSaleDto.quantity } },
-      { new: true }
-    ).exec();
-
-    return savedSale;
-  }
-
-  async findAllSales(
-    productId?: string,
-    page: number = 1,
-    limit: number = 10
-  ): Promise<any> {
-    const skip = (page - 1) * limit;
-    const filter = productId ? { productId } : {};
-
-    const [sales, total] = await Promise.all([
-      this.saleModel
-        .find(filter)
-        .sort({ date: -1 })
-        .populate('productId', 'name sku')
-        .skip(skip)
-        .limit(limit)
-        .exec(),
-      this.saleModel.countDocuments(filter).exec(),
-    ]);
-
-    return {
-      data: sales,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
-  }
-
-  async getSalesReport(startDate?: Date, endDate?: Date): Promise<any> {
-    const matchStage: any = {};
-    
-    if (startDate || endDate) {
-      matchStage.date = {};
-      if (startDate) matchStage.date.$gte = startDate;
-      if (endDate) matchStage.date.$lte = endDate;
-    }
-
-    const report = await this.saleModel.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: null,
-          totalSales: { $sum: '$total' },
-          totalProfit: { $sum: '$profit' },
-          totalDue: { $sum: '$due' },
-          totalQuantity: { $sum: '$quantity' },
-          totalTransactions: { $sum: 1 }
-        }
-      }
-    ]).exec();
-
-    return report[0] || {
-      totalSales: 0,
-      totalProfit: 0,
-      totalDue: 0,
-      totalQuantity: 0,
-      totalTransactions: 0
-    };
-  }
-
-  // Purchase Methods
-  async createPurchase(createPurchaseDto: CreatePurchaseDto): Promise<Purchase> {
-    // Verify product exists
-    const product = await this.productModel.findById(createPurchaseDto.productId).exec();
-    if (!product) {
-      throw new NotFoundException('Product not found');
-    }
-
-    // Calculate total
-    const total = createPurchaseDto.quantity * createPurchaseDto.price;
-
-    const purchaseData = {
-      ...createPurchaseDto,
-      total,
-      productId: createPurchaseDto.productId,
-    };
-
-    const createdPurchase = new this.purchaseModel(purchaseData);
-    const savedPurchase = await createdPurchase.save();
-
-    // Update product quantity and track purchase price
-    await this.productModel.findByIdAndUpdate(
-      createPurchaseDto.productId,
-      { $inc: { quantity: createPurchaseDto.quantity } },
-      { new: true }
-    ).exec();
-
-    return savedPurchase;
-  }
-
-  async findAllPurchases(
-    productId?: string,
-    page: number = 1,
-    limit: number = 10
-  ): Promise<any> {
-    const skip = (page - 1) * limit;
-    const filter = productId ? { productId } : {};
-
-    const [purchases, total] = await Promise.all([
-      this.purchaseModel
-        .find(filter)
-        .sort({ date: -1 })
-        .populate('productId', 'name sku')
-        .skip(skip)
-        .limit(limit)
-        .exec(),
-      this.purchaseModel.countDocuments(filter).exec(),
-    ]);
-
-    return {
-      data: purchases,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
-  }
-
-  async getInventoryReport(): Promise<any> {
-    const lowStockThreshold = 10;
-
-    const [totalProducts, lowStockProducts, totalInventoryValue] = await Promise.all([
-      this.productModel.countDocuments().exec(),
-      this.productModel.find({ quantity: { $lt: lowStockThreshold } }).exec(),
-      this.productModel.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalValue: { $sum: { $multiply: ['$quantity', '$price'] } }
-          }
-        }
-      ]).exec()
-    ]);
-
-    return {
-      totalProducts,
-      lowStockProducts: lowStockProducts.length,
-      lowStockItems: lowStockProducts,
-      totalInventoryValue: totalInventoryValue[0]?.totalValue || 0,
-      lowStockThreshold
-    };
-  }
-
-  async getProductStats(productId: string): Promise<any> {
-    const [product, totalSales, totalPurchases] = await Promise.all([
-      this.productModel.findById(productId).exec(),
-      this.saleModel.aggregate([
-        { $match: { productId: productId as any } },
-        {
-          $group: {
-            _id: null,
-            totalQuantitySold: { $sum: '$quantity' },
-            totalRevenue: { $sum: '$total' },
-            totalProfit: { $sum: '$profit' }
-          }
-        }
-      ]).exec(),
-      this.purchaseModel.aggregate([
-        { $match: { productId: productId as any } },
-        {
-          $group: {
-            _id: null,
-            totalQuantityPurchased: { $sum: '$quantity' },
-            totalCost: { $sum: '$total' }
-          }
-        }
-      ]).exec()
-    ]);
-
-    if (!product) {
-      throw new NotFoundException('Product not found');
-    }
+    const product = await this.productModel.create({
+      name,
+      sku,
+      quantity,
+      price,
+    });
 
     return {
       product,
-      sales: {
-        totalQuantitySold: totalSales[0]?.totalQuantitySold || 0,
-        totalRevenue: totalSales[0]?.totalRevenue || 0,
-        totalProfit: totalSales[0]?.totalProfit || 0,
-        totalTransactions: await this.saleModel.countDocuments({ productId }).exec()
-      },
-      purchases: {
-        totalQuantityPurchased: totalPurchases[0]?.totalQuantityPurchased || 0,
-        totalCost: totalPurchases[0]?.totalCost || 0,
-        totalTransactions: await this.purchaseModel.countDocuments({ productId }).exec()
-      }
+      message: 'Product created successfully',
     };
+  }
+
+  // --- CREATE PURCHASE ---
+  async createPurchase(dto: PurchaseCreateDto) {
+    const { supplierName, productId, quantity, price } = dto;
+
+    if (!supplierName || !productId || quantity <= 0 || price <= 0) {
+      throw new BadRequestException('Invalid credentials');
+    }
+
+    // Validate ObjectId
+    if (!this.isValidObjectId(productId)) {
+      throw new BadRequestException('Invalid product ID');
+    }
+
+    const product = await this.productModel.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const total = quantity * price;
+
+    // Update product stock
+    await this.productModel.findByIdAndUpdate(productId, {
+      $inc: { quantity: quantity },
+    });
+
+    // Create purchase record
+    const purchase = await this.purchaseModel.create({
+      supplierName,
+      productId,
+      quantity,
+      price,
+      total,
+    });
+
+    return {
+      purchase,
+      message: 'Purchase created successfully, and product stock updated',
+    };
+  }
+
+  // --- CREATE SALE ---
+  async createSale(dto: SaleCreateDto) {
+    const { productId, customerName, quantity, salePrice, due, purchasePrice } =
+      dto;
+
+    if (
+      !productId ||
+      !customerName ||
+      quantity <= 0 ||
+      salePrice <= 0 ||
+      purchasePrice == null ||
+      due == null
+    ) {
+      throw new BadRequestException('Invalid credentials');
+    }
+
+    if (!this.isValidObjectId(productId)) {
+      throw new BadRequestException('Invalid product ID');
+    }
+
+    const product = await this.productModel.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    if (product.quantity < quantity) {
+      throw new BadRequestException('Not enough stock available');
+    }
+
+    const total = quantity * salePrice;
+    const profit = total - purchasePrice * quantity;
+
+    // Deduct stock
+    await this.productModel.findByIdAndUpdate(productId, {
+      $inc: { quantity: -quantity },
+    });
+
+    const sale = await this.saleModel.create({
+      productId,
+      customerName,
+      quantity,
+      salePrice,
+      total,
+      profit,
+      due,
+      purchasePrice,
+    });
+
+    return {
+      sale,
+      message: 'Sale created successfully, and product stock updated',
+    };
+  }
+
+  // --- GENERATE REPORT ---
+  async generateReport(startDate: string, endDate: string, productId?: string) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+    if (start > end) {
+      throw new BadRequestException('Start date cannot be later than end date');
+    }
+
+    // Normalize end date to include full day
+    end.setHours(23, 59, 59, 999);
+
+    const matchFilter: any = {
+      date: { $gte: start, $lte: end },
+    };
+
+    if (productId && this.isValidObjectId(productId)) {
+      matchFilter.productId = productId;
+    } else if (productId) {
+      throw new BadRequestException('Invalid product ID');
+    }
+
+    // Aggregation for sales & purchases totals
+    const [salesAgg, purchasesAgg] = await Promise.all([
+      this.saleModel.aggregate([
+        { $match: matchFilter },
+        {
+          $group: {
+            _id: null,
+            totalSalesMoney: { $sum: '$total' },
+            totalProfit: { $sum: '$profit' },
+            totalDues: { $sum: '$due' },
+            totalSaleQuantity: { $sum: '$quantity' },
+          },
+        },
+      ]),
+      this.purchaseModel.aggregate([
+        { $match: matchFilter },
+        {
+          $group: {
+            _id: null,
+            totalPurchasesMoney: { $sum: '$total' },
+            totalPurchaseQuantity: { $sum: '$quantity' },
+          },
+        },
+      ]),
+    ]);
+
+    const saleSummary = salesAgg[0] || {};
+    const purchaseSummary = purchasesAgg[0] || {};
+
+    // Daily data for chart
+    const dailySales = await this.saleModel.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          quantity: { $sum: '$quantity' },
+        },
+      },
+    ]);
+
+    const dailyPurchases = await this.purchaseModel.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          quantity: { $sum: '$quantity' },
+        },
+      },
+    ]);
+
+    // Build full date range
+    const dates: string[] = [];
+    const salesData: number[] = [];
+    const purchasesData: number[] = [];
+
+    let currentDate = new Date(start);
+    while (currentDate <= end) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      dates.push(dateStr);
+
+      const saleDay = dailySales.find((d) => d._id === dateStr);
+      const purchaseDay = dailyPurchases.find((d) => d._id === dateStr);
+
+      salesData.push(saleDay?.quantity || 0);
+      purchasesData.push(purchaseDay?.quantity || 0);
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return {
+      data: {
+        dates,
+        salesData,
+        purchasesData,
+        totalSalesMoney: saleSummary.totalSalesMoney || 0,
+        totalSaleQuantity: saleSummary.totalSaleQuantity || 0,
+        totalPurchasesMoney: purchaseSummary.totalPurchasesMoney || 0,
+        totalPurchaseQuantity: purchaseSummary.totalPurchaseQuantity || 0,
+        totalProfit: saleSummary.totalProfit || 0,
+        totalDues: saleSummary.totalDues || 0,
+      },
+      message: 'Report generated successfully',
+    };
+  }
+
+  // --- GET SALES WITH PAGINATION ---
+  async getSalesWithPagination(
+    startDate?: string,
+    endDate?: string,
+    productId?: string,
+    customerName?: string,
+    page: any = 1,
+    pageSize: any = 10,
+  ) {
+    const now = moment();
+    const start = startDate
+      ? new Date(startDate)
+      : now.clone().startOf('month').toDate();
+    const end = endDate
+      ? new Date(endDate)
+      : now.clone().endOf('month').toDate();
+
+    end.setHours(23, 59, 59, 999);
+
+    if (start > end) {
+      throw new BadRequestException('Start date cannot be later than end date');
+    }
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limit = Math.max(1, Number(pageSize) || 10);
+    const skip = (pageNum - 1) * limit;
+
+    const filter: any = {
+      date: { $gte: start, $lte: end },
+    };
+
+    if (productId) {
+      if (!this.isValidObjectId(productId)) {
+        throw new BadRequestException('Invalid product ID');
+      }
+      filter.productId = productId;
+    }
+
+    if (customerName?.trim()) {
+      filter.customerName = { $regex: customerName.trim(), $options: 'i' };
+    }
+
+    const [sales, totalSalesCount, aggregates] = await Promise.all([
+      this.saleModel.find(filter).skip(skip).limit(limit).sort({ date: -1 }),
+      this.saleModel.countDocuments(filter),
+      this.saleModel.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalQuantity: { $sum: '$quantity' },
+            totalProfit: { $sum: '$profit' },
+            totalDue: { $sum: '$due' },
+            totalAmount: { $sum: '$total' },
+          },
+        },
+      ]),
+    ]);
+
+    const agg = aggregates[0] || {};
+
+    return {
+      sales,
+      totalSalesCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalSalesCount / limit),
+      salesData: {
+        quantity: agg.totalQuantity || 0,
+        profit: agg.totalProfit || 0,
+        due: agg.totalDue || 0,
+        total: agg.totalAmount || 0,
+      },
+    };
+  }
+
+  // --- GET PURCHASES WITH PAGINATION ---
+  async getPurchasesWithPagination(
+    startDate?: string,
+    endDate?: string,
+    productId?: string,
+    supplierName?: string,
+    page: any = 1,
+    pageSize: any = 10,
+  ) {
+    const now = moment();
+    const start = startDate
+      ? new Date(startDate)
+      : now.clone().startOf('month').toDate();
+    const end = endDate
+      ? new Date(endDate)
+      : now.clone().endOf('month').toDate();
+
+    end.setHours(23, 59, 59, 999);
+
+    if (start > end) {
+      throw new BadRequestException('Start date cannot be later than end date');
+    }
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limit = Math.max(1, Number(pageSize) || 10);
+    const skip = (pageNum - 1) * limit;
+
+    const filter: any = {
+      date: { $gte: start, $lte: end },
+    };
+
+    if (productId) {
+      if (!this.isValidObjectId(productId)) {
+        throw new BadRequestException('Invalid product ID');
+      }
+      filter.productId = productId;
+    }
+
+    if (supplierName?.trim()) {
+      filter.supplierName = { $regex: supplierName.trim(), $options: 'i' };
+    }
+
+    const [purchases, totalPurchasesCount, aggregates] = await Promise.all([
+      this.purchaseModel
+        .find(filter)
+        .skip(skip)
+        .limit(limit)
+        .sort({ date: -1 }),
+      this.purchaseModel.countDocuments(filter),
+      this.purchaseModel.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalQuantity: { $sum: '$quantity' },
+            totalAmount: { $sum: '$total' },
+          },
+        },
+      ]),
+    ]);
+
+    const agg = aggregates[0] || {};
+
+    return {
+      purchases,
+      totalPurchasesCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalPurchasesCount / limit),
+      purchasesData: {
+        quantity: agg.totalQuantity || 0,
+        total: agg.totalAmount || 0,
+      },
+    };
+  }
+
+  // --- GET PRODUCT DATA IN DATE RANGE ---
+  async getProductDataInRange(
+    productId: string,
+    startDate: Date,
+    endDate: Date,
+  ) {
+    // Validate date range
+    if (startDate > endDate) {
+      throw new BadRequestException('Start date cannot be later than end date');
+    }
+
+    // Validate ObjectId
+    if (!this.isValidObjectId(productId)) {
+      throw new BadRequestException('Invalid product ID');
+    }
+
+    // Normalize end date to include full day
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    // Run parallel aggregations for sales and purchases
+    const [salesAgg, purchasesAgg] = await Promise.all([
+      // Aggregate sales data
+      this.saleModel.aggregate([
+        {
+          $match: {
+            productId: productId,
+            date: { $gte: startDate, $lte: end },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSales: { $sum: '$total' },
+            totalSaleQuantity: { $sum: '$quantity' },
+            totalProfit: { $sum: '$profit' },
+            totalDues: { $sum: '$due' },
+          },
+        },
+      ]),
+      // Aggregate purchases data
+      this.purchaseModel.aggregate([
+        {
+          $match: {
+            productId: productId,
+            date: { $gte: startDate, $lte: end },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalPurchases: { $sum: '$total' },
+            totalPurchaseQuantity: { $sum: '$quantity' },
+          },
+        },
+      ]),
+    ]);
+
+    const saleSummary = salesAgg[0] || {};
+    const purchaseSummary = purchasesAgg[0] || {};
+
+    return {
+      totalSales: saleSummary.totalSales || 0,
+      totalSaleQuantity: saleSummary.totalSaleQuantity || 0,
+      totalPurchaseQuantity: purchaseSummary.totalPurchaseQuantity || 0,
+      totalProfit: saleSummary.totalProfit || 0,
+      totalDues: saleSummary.totalDues || 0,
+      totalPurchases: purchaseSummary.totalPurchases || 0,
+    };
+  }
+  // --- GET DUES WITH PAGINATION ---
+  async getDueWithPagination(
+    startDate?: string,
+    endDate?: string,
+    productId?: string,
+    page: any = 1,
+    pageSize: any = 10,
+  ) {
+    const now = moment();
+    const start = startDate
+      ? new Date(startDate)
+      : now.clone().startOf('month').toDate();
+    const end = endDate
+      ? new Date(endDate)
+      : now.clone().endOf('month').toDate();
+
+    end.setHours(23, 59, 59, 999);
+
+    if (start > end) {
+      throw new BadRequestException('Start date cannot be later than end date');
+    }
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limit = Math.max(1, Number(pageSize) || 10);
+    const skip = (pageNum - 1) * limit;
+
+    const filter: any = {
+      date: { $gte: start, $lte: end },
+      due: { $gt: 0 },
+    };
+
+    if (productId) {
+      if (!this.isValidObjectId(productId)) {
+        throw new BadRequestException('Invalid product ID');
+      }
+      filter.productId = productId;
+    }
+
+    const [sales, totalDueCount] = await Promise.all([
+      this.saleModel.find(filter).skip(skip).limit(limit).sort({ date: -1 }),
+      this.saleModel.countDocuments(filter),
+    ]);
+
+    return {
+      sales,
+      totalDueCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalDueCount / limit),
+    };
+  }
+
+  // --- HELPER: Validate ObjectId ---
+  private isValidObjectId(id: string): boolean {
+    return /^[0-9a-fA-F]{24}$/.test(id);
   }
 }

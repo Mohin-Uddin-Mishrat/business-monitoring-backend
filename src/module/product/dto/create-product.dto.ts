@@ -12,7 +12,7 @@ import {
   PartialType
 } from '@nestjs/swagger';
 
-export class CreateProductDto {
+export class ProductCreateDto {
   @ApiProperty({
     description: 'Product name',
     example: 'Premium Coffee Beans'
@@ -75,4 +75,4 @@ export class CreateProductDto {
 
 
 
-export class UpdateProductDto extends PartialType(CreateProductDto) {}
+export class UpdateProductDto extends PartialType(ProductCreateDto) {}
